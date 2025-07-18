@@ -1,17 +1,27 @@
-import json
+# trap_journal.py
+# Appends sniper events to a trap log CSV
+
+import csv
 import os
 
-def log_sniper_hit(entry_data):
-    os.makedirs("logs", exist_ok=True)
-    file_path = "logs/trap_journal.json"
+log_file = "logs/sniper_trap_journal.csv"
+os.makedirs("logs", exist_ok=True)
 
-    if os.path.exists(file_path):
-        with open(file_path, "r") as f:
-            log = json.load(f)
-    else:
-        log = []
+# Create header if file doesn’t exist
+if not os.path.exists(log_file):
+    with open(log_file, mode='w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(["timestamp", "entry_price", "vwap", "rsi", "reason", "score"])
 
-    log.append(entry_data)
-
-    with open(file_path, "w") as f:
-        json.dump(log, f, indent=2)
+# Function to log sniper event
+def log_sniper_event(event):
+    with open(log_file, mode='a', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            event["timestamp"],
+            event["entry_price"],
+            event["vwap"],
+            event["rsi"],
+            event["reason"],
+            event["score"]
+        ])
