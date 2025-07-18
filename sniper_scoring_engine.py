@@ -1,60 +1,64 @@
 from cvd_divergence import detect_cvd_divergence
 from spoof_ratio_engine import calculate_spoof_ratio
+from trap_memory import check_reentry
 
 def score_sniper_candle(row, history, orderbook=None):
     """
-    Scores a candle using RSI-V, VWAP trap, CVD divergence, and spoof ratio.
-    - `row`: current candle (dict or Series)
-    - `history`: previous candles (DataFrame or list of dicts)
-    - `orderbook`: optional live bid/ask snapshot
+    Score a single candle using multiple confluence tools.
+    Returns: (score: float, tags: list[str])
     """
 
-    confluence = []
     score = 0
+    tags = []
 
-    # --- RSI-V ---
+    # --- RSI-V Split Detection ---
     try:
         rsi_vals = [h["rsi"] for h in history[-3:]] + [row["rsi"]]
         if rsi_vals[0] > rsi_vals[1] < rsi_vals[2] and rsi_vals[3] > 30:
             score += 0.25
-            confluence.append("RSI-V Split")
+            tags.append("RSI-V Split")
     except:
         pass
 
-    # --- VWAP Trap ---
+    # --- VWAP Trap Zone ---
     try:
         if row["close"] < row["vwap"]:
-            score += 0.2
-            confluence.append("Below VWAP")
+            score += 0.20
+            tags.append("Below VWAP")
     except:
         pass
 
-    # --- Spoof Ratio ---
+    # --- Spoof Ratio from Orderbook ---
     if orderbook:
         spoof_ratio = calculate_spoof_ratio(orderbook)
         row["spoof_ratio"] = spoof_ratio
         if spoof_ratio > 0.85:
-            score += 0.2
-            confluence.append("Spoof Ratio High")
+            score += 0.20
+            tags.append("Spoof Ratio High")
 
-    # --- CVD Divergence ---
+    # --- CVD Divergence Detection ---
     try:
-        price_hist = [h["close"] for h in history[-3:]] + [row["close"]]
-        cvd_hist = [h.get("cvd", 0) for h in history[-3:]] + [row.get("cvd", 0)]
-        if detect_cvd_divergence(price_hist, cvd_hist):
-            score += 0.2
-            confluence.append("CVD Divergence")
+        price_series = [h["close"] for h in history[-3:]] + [row["close"]]
+        cvd_series = [h.get("cvd", 0) for h in history[-3:]] + [row.get("cvd", 0)]
+        if detect_cvd_divergence(price_series, cvd_series):
+            score += 0.20
+            tags.append("CVD Divergence")
     except:
         pass
 
-    # --- TPO + Heatmap Hooks (future use) ---
-    if row.get("tpo_zone") == "untested_poc":
-        score += 0.1
-        confluence.append("Untested POC")
-
+    # --- Heatmap Absorption (Volume Spike with Stalled Candle) ---
     if row.get("heatmap_absorption", False):
-        score += 0.1
-        confluence.append("Heatmap Trap")
+        score += 0.10
+        tags.append("Heatmap Trap")
 
-    # Final scoring
-    return round(score, 2), confluence
+    # --- Reentry into Old Trap Zones ---
+    if check_reentry(row["close"]):
+        score += 0.10
+        tags.append("Reentry Trap")
+
+    # --- Optional: TPO Untested POC Support ---
+    if row.get("tpo_zone") == "untested_poc":
+        score += 0.10
+        tags.append("Untested POC")
+
+    return round(score, 2), tags
